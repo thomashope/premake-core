@@ -159,6 +159,10 @@
 				-- assign build IDs to buildable files
 				if xcode.getbuildcategory(node) and not node.excludefrombuild and not xcode.mustExcludeFromTarget(node, tr.project) then
 					node.buildid = xcode.newid(node.name, "build", nodePath)
+
+					if xcode.shouldembed(tr, node) then
+						node.embedid = xcode.newid(node.name, "embed", nodePath)
+					end
 				end
 
 				-- remember key files that are needed elsewhere
@@ -174,10 +178,11 @@
 		node = tree.insert(tr.products, prj.xcode.projectnode)
 		node.kind = "product"
 		node.path = node.cfg.buildtarget.fullpath
-		node.cfgsection = xcode.newid(node.name, "cfg")
-		node.resstageid = xcode.newid(node.name, "rez")
-		node.sourcesid  = xcode.newid(node.name, "src")
-		node.fxstageid  = xcode.newid(node.name, "fxs")
+		node.cfgsection   = xcode.newid(node.name, "cfg")
+		node.resstageid   = xcode.newid(node.name, "rez")
+		node.sourcesid    = xcode.newid(node.name, "src")
+		node.fxstageid    = xcode.newid(node.name, "fxs")
+		node.embedstageid = xcode.newid(node.name, "embed")
 
 		return tr
 	end
@@ -221,6 +226,7 @@
 		local tr = xcode.buildprjtree(prj)
 		p.callArray(m.elements.project, prj)
 		xcode.PBXBuildFile(tr)
+		xcode.PBXCopyFilesBuildPhase(tr)
 		xcode.PBXContainerItemProxy(tr)
 		xcode.PBXFileReference(tr)
 		xcode.PBXFrameworksBuildPhase(tr)

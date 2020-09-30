@@ -50,6 +50,27 @@
 		return categories[path.getextension(node.name)]
 	end
 
+
+--
+-- Returns a string containing settings for files in the PBXBuildFile section
+--
+
+	function xcode.getBuildSettings(tr, node)
+		if xcode.isframework(node.name) then
+			if xcode.shouldembedandsign(tr, node) then
+				return '{ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); };'
+			elseif xcode.shouldembedwithoutsigning(tr, node) then
+				return '{ATTRIBUTES = (RemoveHeadersOnCopy, ); };'
+			end
+		end
+		return nil
+	end
+
+
+--
+--
+--
+
 	function xcode.isItemResource(project, node)
 		local res
 
@@ -319,6 +340,41 @@
 
 
 --
+-- Returns true if the given framework or .dylib should be marked as 'Embed Without Signing'
+--
+
+	function xcode.shouldembedwithoutsigning(tr, node)
+		for _, cfg in ipairs(tr.configs) do
+			if type(cfg.xcodeembedwithoutsigning) == 'table' then
+				return table.contains(cfg.xcodeembedwithoutsigning, node.name)
+			end
+		end
+	end
+
+
+--
+-- Returns true if the given framework or .dylib should be marked as 'Embed & Signing'
+--
+
+	function xcode.shouldembedandsign(tr, node)
+		for _, cfg in ipairs(tr.configs) do
+			if type(cfg.xcodeembedandsign) == 'table' then
+				return table.contains(cfg.xcodeembedandsign, node.name)
+			end
+		end
+	end
+
+
+--
+-- Returns true if the given framework or .dylib should be embedded
+--
+
+	function xcode.shouldembed(tr, node)
+		return xcode.shouldembedwithoutsigning(tr, node) or xcode.shouldembedandsign(tr, node)
+	end
+
+
+--
 -- Retrieves a unique 12 byte ID for an object.
 -- This function accepts an array of parameters that will be used to generate the id.
 --
@@ -386,6 +442,14 @@
 					settings[node.buildid] = function(level)
 						_p(level,'%s /* %s in %s */ = {isa = PBXBuildFile; fileRef = %s /* %s */; };',
 							node.buildid, node.name, xcode.getbuildcategory(node), node.id, node.name)
+
+						if node.embedid then
+							local settings = xcode.getBuildSettings(tr, node)
+							if settings then
+								_p(level,'%s /* %s in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = %s /* %s */; settings = %s };',
+									node.embedid, node.name, node.id, node.name, settings)
+							end
+						end
 					end
 				end
 			end
@@ -397,6 +461,42 @@
 			_p('/* End PBXBuildFile section */')
 			_p('')
 		end
+	end
+
+
+	function xcode.PBXCopyFilesBuildPhase(tr)
+		_p('/* Begin PBXCopyFilesBuildPhase section */')
+		_p(2,'%s /* Embed Frameworks */ = {', tr.products.children[1].embedstageid)
+		_p(3,'isa = PBXCopyFilesBuildPhase;')
+		_p(3,'buildActionMask = 2147483647;')
+		_p(3,'dstPath = "";')
+		_p(3,'dstSubfolderSpec = 10;')
+		_p(3,'files = (')
+
+		-- write out library dependencies
+		tree.traverse(tr.frameworks, {
+			onleaf = function(node)
+				if node.buildid then
+					_p(4,'%s /* %s in Embed Frameworks */,', node.embedid, node.name)
+				end
+			end
+		})
+
+		-- write out project dependencies
+		tree.traverse(tr.projects, {
+			onleaf = function(node)
+				if node.buildid then
+					_p(4,'%s /* %s in Embed Frameworks */,', node.embedid, node.name)
+				end
+			end
+		})
+
+		_p(3,');')
+		_p(3,'name = "Embed Frameworks";')
+		_p(3,'runOnlyForDeploymentPostprocessing = 0;')
+		_p(2,'};')
+		_p('/* End PBXCopyFilesBuildPhase section */')
+		_p('')
 	end
 
 
@@ -745,6 +845,7 @@
 			end
 			if pbxTargetName == "Native" then
 				_p(4,'%s /* Frameworks */,', node.fxstageid)
+				_p(4,'%s /* Embed Frameworks */,', node.embedstageid)
 			end
 			if hasBuildCommands('postbuildcommands') then
 				_p(4,'9607AE3710C85E8F00CD1376 /* Postbuild */,')
@@ -1143,6 +1244,14 @@
 			OSXFramework = '$(LOCAL_LIBRARY_DIR)/Frameworks',
 		}
 		settings['INSTALL_PATH'] = installpaths[iif(cfg.kind == "SharedLib" and cfg.sharedlibtype, cfg.sharedlibtype, cfg.kind)]
+
+		-- if we are embedding frameworks, add a default search path to the executable
+		for _,cfg in pairs(tr.configs) do
+			if not table.isempty(cfg.xcodeembedwithoutsigning) or not table.isempty(cfg.xcodeembedandsign) then
+				settings['LD_RUNPATH_SEARCH_PATHS'] = "$(inherited) @executable_path/../Frameworks"
+				break
+			end
+		end
 
 		local fileNameList = {}
 		local file_tree = project.getsourcetree(tr.project)

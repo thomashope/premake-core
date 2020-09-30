@@ -24,6 +24,18 @@
 	}
 
 	p.api.register {
+		name = "xcodeembedwithoutsigning",
+		scope = "config",
+		kind = "list"
+	}
+
+	p.api.register {
+		name = "xcodeembedandsign",
+		scope = "config",
+		kind = "list"
+	}
+
+	p.api.register {
 		name = "xcodecodesigningidentity",
 		scope = "config",
 		kind = "string",
